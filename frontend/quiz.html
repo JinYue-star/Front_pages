@@ -1,0 +1,232 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>巩固测验</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body class="app-shell">
+    <aside class="sidebar" aria-label="导览">
+        <div class="sidebar-brand">
+            <h1>文档问答</h1>
+            <p class="subtitle">测验与判分</p>
+        </div>
+        <nav class="sidebar-nav">
+            <a href="index.html" class="nav-link">对话</a>
+            <a href="quiz.html" class="nav-link active">巩固测验</a>
+        </nav>
+    </aside>
+
+    <main class="main-panel quiz-page">
+        <section class="quiz-section">
+            <div id="quizEmpty" class="quiz-empty">
+                <p>请先在「对话」页勾选助手消息并设定各段出题数量后点击「生成测验」，将在此展示题目。</p>
+                <a href="index.html" class="link-btn">返回对话</a>
+            </div>
+            <div id="quizInteractive" style="display:none">
+                <h2 class="quiz-page-title">巩固测验 <span class="hint" id="quizTypeHint">选择题 / 填空 / 简答</span></h2>
+                <div id="quizBody"></div>
+                <div class="quiz-actions">
+                    <button type="button" id="submitQuizBtn" class="submit-btn">提交判分</button>
+                </div>
+            </div>
+            <div id="gradeCard" class="grade-card" style="display:none">
+                <h3>判分结果</h3>
+                <div class="grade-summary" id="gradeSummary"></div>
+                <div class="grade-items" id="gradeItems"></div>
+                <div class="grade-analysis" id="gradeAnalysis"></div>
+            </div>
+        </section>
+    </main>
+
+    <div class="toast" id="toast">
+        <span class="toast-message"></span>
+    </div>
+
+    <script>
+(function () {
+    const isGitHubPages = window.location.hostname.endsWith('github.io');
+    function resolveDefaultApiBase() {
+        if (isGitHubPages) {
+            return 'https://kitty-collapse-ivory-vol.trycloudflare.com';
+        }
+        if (window.location.protocol === 'file:') {
+            return 'http://127.0.0.1:8000';
+        }
+        var port = window.location.port;
+        var devPorts = { '5500': 1, '5501': 1, '3000': 1, '5173': 1, '4173': 1, '8080': 1 };
+        if (port && devPorts[port]) {
+            return window.location.protocol + '//' + window.location.hostname + ':8000';
+        }
+        return window.location.origin;
+    }
+    const DEFAULT_API_BASE = resolveDefaultApiBase();
+    const storedApiBase = localStorage.getItem('RAG_API_BASE');
+    const stale = new Set(['http://35.77.38.184:8000', 'http://35.77.38.184:8001', 'https://kitty-collapse-ivory-vol.trycloudflare.com']);
+    const API_BASE = String(window.__API_BASE__ || (storedApiBase && !stale.has(storedApiBase) ? storedApiBase : DEFAULT_API_BASE)).replace(/\/+$/, '');
+    const LAST_QUIZ_KEY = 'RAG_LAST_QUIZ';
+    const SID_KEY = 'RAG_SESSION_ID';
+    const SEC_KEY = 'RAG_SESSION_SECRET';
+
+    const el = {
+        empty: document.getElementById('quizEmpty'),
+        interactive: document.getElementById('quizInteractive'),
+        quizBody: document.getElementById('quizBody'),
+        submitBtn: document.getElementById('submitQuizBtn'),
+        gradeCard: document.getElementById('gradeCard'),
+        gradeSummary: document.getElementById('gradeSummary'),
+        gradeItems: document.getElementById('gradeItems'),
+        gradeAnalysis: document.getElementById('gradeAnalysis'),
+        toast: document.getElementById('toast')
+    };
+
+    function toast(msg, err) {
+        el.toast.querySelector('.toast-message').textContent = msg;
+        el.toast.classList.toggle('error', !!err);
+        el.toast.classList.add('show');
+        setTimeout(function () { el.toast.classList.remove('show'); }, 3200);
+    }
+
+    function authHeaders() {
+        var h = {};
+        var access = (localStorage.getItem('RAG_ACCESS_TOKEN') || '').trim();
+        if (access) h['Authorization'] = 'Bearer ' + access;
+        var sec = (localStorage.getItem(SEC_KEY) || '').trim();
+        if (sec) h['X-Session-Secret'] = sec;
+        return h;
+    }
+
+    function quizTypeLabel(t) {
+        if (t === 'tf') return '判断题';
+        if (t === 'single') return '单选题';
+        if (t === 'multi') return '多选题';
+        return t || '题目';
+    }
+
+    var currentQuiz = null;
+
+    function renderQuiz(quiz) {
+        currentQuiz = quiz;
+        el.empty.style.display = 'none';
+        el.interactive.style.display = '';
+        el.quizBody.innerHTML = '';
+        quiz.items.forEach(function (item, i) {
+            var wrap = document.createElement('div');
+            wrap.className = 'quiz-item';
+            var title = document.createElement('div');
+            title.className = 'quiz-q-title';
+            title.textContent = (i + 1) + '. [' + quizTypeLabel(item.type) + '] ' + (item.question || '');
+            wrap.appendChild(title);
+            if ((item.type === 'tf' || item.type === 'single') && item.options) {
+                item.options.forEach(function (opt, optIndex) {
+                    var lab = document.createElement('label');
+                    lab.className = 'quiz-option';
+                    var inp = document.createElement('input');
+                    inp.type = 'radio';
+                    inp.name = 'quiz-opt-' + i;
+                    inp.value = opt;
+                    inp.id = 'quiz-opt-' + i + '-' + optIndex;
+                    lab.appendChild(inp);
+                    lab.appendChild(document.createTextNode(' ' + opt));
+                    wrap.appendChild(lab);
+                });
+            } else if (item.type === 'multi' && item.options) {
+                item.options.forEach(function (opt, optIndex) {
+                    var lab = document.createElement('label');
+                    lab.className = 'quiz-option';
+                    var inp = document.createElement('input');
+                    inp.type = 'checkbox';
+                    inp.name = 'quiz-multi-' + i;
+                    inp.value = String(optIndex);
+                    inp.id = 'quiz-multi-' + i + '-' + optIndex;
+                    lab.appendChild(inp);
+                    lab.appendChild(document.createTextNode(' ' + opt));
+                    wrap.appendChild(lab);
+                });
+            } else {
+                wrap.appendChild(document.createTextNode('Unsupported type: ' + (item.type || '')));
+            }
+            el.quizBody.appendChild(wrap);
+        });
+    }
+
+    function renderGrade(data) {
+        el.gradeCard.style.display = '';
+        el.gradeSummary.textContent = '总分：' + (data.total_score || 0) + ' / ' + (data.max_total_score || 100);
+        el.gradeItems.innerHTML = '';
+        (data.items || []).forEach(function (row) {
+            var div = document.createElement('div');
+            div.className = 'grade-item';
+            div.innerHTML = '<div class="grade-item-head">第 ' + ((row.index || 0) + 1) + ' 题 [' + (row.question_type || '') + '] · ' + (row.score || 0) + ' / ' + (row.max_score || 20) + ' 分</div>' +
+                '<div class="grade-item-detail">你的答案：' + (row.user_answer || '（空）') + '\n标准答案：' + (row.correct_answer || '') + '\n点评：' + (row.comment || '') + '</div>';
+            el.gradeItems.appendChild(div);
+        });
+        el.gradeAnalysis.textContent = data.analysis || '';
+    }
+
+    async function submitGrade() {
+        if (!currentQuiz || !localStorage.getItem(SID_KEY)) {
+            toast('没有可提交的测验', true);
+            return;
+        }
+        var items = currentQuiz.items;
+        var answers = items.map(function (item, i) {
+            if (item.type === 'tf' || item.type === 'single') {
+                var sel = el.quizBody.querySelector('input[name="quiz-opt-' + i + '"]:checked');
+                return sel ? sel.value : '';
+            }
+            if (item.type === 'multi') {
+                var cbs = el.quizBody.querySelectorAll('input[name="quiz-multi-' + i + '"]:checked');
+                return Array.from(cbs).map(function (cb) { return cb.value; }).sort(function (a, b) {
+                    return Number(a) - Number(b);
+                }).join(',');
+            }
+            return '';
+        });
+        var need = items.length;
+        if (answers.length !== need || answers.some(function (a) { return !String(a).trim(); })) {
+            toast('请完成全部 ' + need + ' 道题', true);
+            return;
+        }
+        el.submitBtn.disabled = true;
+        try {
+            var res = await fetch(
+                API_BASE + '/api/v1/sessions/' + encodeURIComponent(localStorage.getItem(SID_KEY)) + '/quiz/' + encodeURIComponent(currentQuiz.quiz_id) + '/grade',
+                {
+                    method: 'POST',
+                    headers: Object.assign({ 'Content-Type': 'application/json' }, authHeaders()),
+                    body: JSON.stringify({ answers: answers })
+                }
+            );
+            if (!res.ok) {
+                var t = await res.text();
+                throw new Error(t || '判分失败');
+            }
+            var data = await res.json();
+            renderGrade(data);
+            toast('判分完成');
+        } catch (e) {
+            toast(e.message || '判分失败', true);
+        } finally {
+            el.submitBtn.disabled = false;
+        }
+    }
+
+    el.submitBtn.addEventListener('click', submitGrade);
+
+    try {
+        var raw = sessionStorage.getItem(LAST_QUIZ_KEY);
+        if (raw) {
+            var quiz = JSON.parse(raw);
+            if (quiz && quiz.quiz_id && quiz.items && quiz.items.length > 0) {
+                renderQuiz(quiz);
+            }
+        }
+    } catch (e) {
+        console.error(e);
+    }
+})();
+    </script>
+</body>
+</html>

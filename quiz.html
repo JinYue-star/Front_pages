@@ -1,0 +1,459 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="巩固测验 - 基于文档问答生成的练习题">
+    <title>📝 巩固测验</title>
+    <link rel="stylesheet" href="styles.css">
+    <link rel="icon" type="image/x-icon" href="data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%2328a745'><path d='M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z'/></svg>">
+</head>
+<body class="app-shell">
+    <aside class="sidebar" aria-label="导览">
+        <div class="sidebar-brand">
+            <h1>📚 智能文档问答</h1>
+            <p class="subtitle">基于文档内容的精准AI问答</p>
+        </div>
+        <nav class="sidebar-nav">
+            <a href="index.html" class="nav-link">💬 对话问答</a>
+            <a href="quiz.html" class="nav-link active">📝 巩固测验</a>
+        </nav>
+    </aside>
+
+    <main class="main-panel quiz-page">
+        <section class="quiz-section">
+            <div id="quizEmpty" class="quiz-empty">
+                <div style="margin-bottom: var(--spacing-md);">
+                    <svg viewBox="0 0 24 24" width="64" height="64" fill="none" stroke="currentColor" stroke-width="1.5" style="color: var(--color-gray-300);">
+                        <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
+                    </svg>
+                </div>
+                <h3 style="color: var(--color-gray-700); margin-bottom: var(--spacing-sm);">暂无测验题目</h3>
+                <p style="color: var(--color-gray-500); line-height: 1.6;">
+                    请先在「对话问答」页勾选助手消息并设定各段出题数量后点击「生成测验」，题目将在此展示。
+                </p>
+                <a href="index.html" class="link-btn">← 返回对话问答</a>
+            </div>
+            
+            <div id="quizInteractive" style="display:none">
+                <div class="card-header" style="background: var(--primary-light); border-color: var(--primary-color);">
+                    <h2 class="quiz-page-title">📝 巩固测验</h2>
+                    <span class="hint" id="quizTypeHint" style="background: var(--primary-color); color: white; padding: 4px 8px; border-radius: var(--radius-sm);">混合题型</span>
+                </div>
+                
+                <div class="card-body">
+                    <div id="quizBody"></div>
+                </div>
+                
+                <div class="quiz-actions">
+                    <button type="button" id="submitQuizBtn" class="submit-btn">✅ 提交判分</button>
+                    <button type="button" id="resetQuizBtn" class="secondary-btn" style="margin-left: var(--spacing-sm);">🔄 重新答题</button>
+                </div>
+            </div>
+            
+            <div id="gradeCard" class="grade-card" style="display:none;">
+                <div class="card-header">
+                    <h3>🎯 判分结果</h3>
+                    <button type="button" id="restartQuizBtn" class="secondary-btn">🔄 重新测验</button>
+                </div>
+                
+                <div class="card-body">
+                    <div class="grade-summary" id="gradeSummary"></div>
+                    <div class="grade-items" id="gradeItems"></div>
+                    <div class="grade-analysis" id="gradeAnalysis"></div>
+                </div>
+            </div>
+        </section>
+    </main>
+
+    <div class="toast" id="toast">
+        <span class="toast-message"></span>
+    </div>
+
+    <script>
+(function () {
+    const isGitHubPages = window.location.hostname.endsWith('github.io');
+    function resolveDefaultApiBase() {
+        if (isGitHubPages) {
+            return 'https://kitty-collapse-ivory-vol.trycloudflare.com';
+        }
+        if (window.location.protocol === 'file:') {
+            return 'http://127.0.0.1:8000';
+        }
+        var port = window.location.port;
+        var devPorts = { '5500': 1, '5501': 1, '3000': 1, '5173': 1, '4173': 1, '8080': 1 };
+        if (port && devPorts[port]) {
+            return window.location.protocol + '//' + window.location.hostname + ':8000';
+        }
+        return window.location.origin;
+    }
+    const DEFAULT_API_BASE = resolveDefaultApiBase();
+    const storedApiBase = localStorage.getItem('RAG_API_BASE');
+    const stale = new Set(['http://35.77.38.184:8000', 'http://35.77.38.184:8001', 'https://kitty-collapse-ivory-vol.trycloudflare.com']);
+    const API_BASE = String(window.__API_BASE__ || (storedApiBase && !stale.has(storedApiBase) ? storedApiBase : DEFAULT_API_BASE)).replace(/\/+$/, '');
+    const LAST_QUIZ_KEY = 'RAG_LAST_QUIZ';
+    const SID_KEY = 'RAG_SESSION_ID';
+    const SEC_KEY = 'RAG_SESSION_SECRET';
+
+    const el = {
+        empty: document.getElementById('quizEmpty'),
+        interactive: document.getElementById('quizInteractive'),
+        quizBody: document.getElementById('quizBody'),
+        submitBtn: document.getElementById('submitQuizBtn'),
+        resetBtn: document.getElementById('resetQuizBtn'),
+        restartBtn: document.getElementById('restartQuizBtn'),
+        gradeCard: document.getElementById('gradeCard'),
+        gradeSummary: document.getElementById('gradeSummary'),
+        gradeItems: document.getElementById('gradeItems'),
+        gradeAnalysis: document.getElementById('gradeAnalysis'),
+        toast: document.getElementById('toast'),
+        quizTypeHint: document.getElementById('quizTypeHint')
+    };
+
+    function showToast(message, isError = false, isSuccess = false) {
+        const toast = el.toast;
+        const messageEl = toast.querySelector('.toast-message');
+        messageEl.textContent = message;
+        
+        // 重置样式
+        toast.className = 'toast';
+        
+        if (isError) {
+            toast.classList.add('error');
+        } else if (isSuccess) {
+            toast.classList.add('success');
+        }
+        
+        toast.classList.add('show');
+        setTimeout(() => toast.classList.remove('show'), 3500);
+    }
+
+    function authHeaders() {
+        var h = {};
+        var access = (localStorage.getItem('RAG_ACCESS_TOKEN') || '').trim();
+        if (access) h['Authorization'] = 'Bearer ' + access;
+        var sec = (localStorage.getItem(SEC_KEY) || '').trim();
+        if (sec) h['X-Session-Secret'] = sec;
+        return h;
+    }
+
+    function quizTypeLabel(t) {
+        if (t === 'tf') return '判断题';
+        if (t === 'single') return '单选题';
+        if (t === 'multi') return '多选题';
+        return t || '题目';
+    }
+
+    function getQuizTypeEmoji(t) {
+        if (t === 'tf') return '✓✗';
+        if (t === 'single') return '🔘';
+        if (t === 'multi') return '☑️';
+        return '❔';
+    }
+
+    var currentQuiz = null;
+
+    function renderQuiz(quiz) {
+        currentQuiz = quiz;
+        el.empty.style.display = 'none';
+        el.interactive.style.display = 'block';
+        el.quizBody.innerHTML = '';
+        
+        // 统计题型分布
+        const typeCounts = {};
+        quiz.items.forEach(item => {
+            typeCounts[item.type] = (typeCounts[item.type] || 0) + 1;
+        });
+        
+        // 更新题型提示
+        const typeLabels = Object.entries(typeCounts).map(([type, count]) => {
+            return `${quizTypeLabel(type)}(${count})`;
+        }).join(' / ');
+        el.quizTypeHint.textContent = typeLabels;
+
+        quiz.items.forEach(function (item, i) {
+            var wrap = document.createElement('div');
+            wrap.className = 'quiz-item';
+            
+            var title = document.createElement('div');
+            title.className = 'quiz-q-title';
+            title.innerHTML = `
+                <span style="margin-right: 8px;">${getQuizTypeEmoji(item.type)}</span>
+                ${(i + 1)}. ${(item.question || '')}
+                <span style="float: right; font-size: 12px; color: var(--color-gray-500);">
+                    ${quizTypeLabel(item.type)} · ${item.score || 10}分
+                </span>
+            `;
+            wrap.appendChild(title);
+            
+            if ((item.type === 'tf' || item.type === 'single') && item.options) {
+                item.options.forEach(function (opt, optIndex) {
+                    var lab = document.createElement('label');
+                    lab.className = 'quiz-option';
+                    
+                    var optionCard = document.createElement('div');
+                    optionCard.style.display = 'flex';
+                    optionCard.style.alignItems = 'flex-start';
+                    optionCard.style.gap = '8px';
+                    optionCard.style.width = '100%';
+                    
+                    var inp = document.createElement('input');
+                    inp.type = 'radio';
+                    inp.name = 'quiz-opt-' + i;
+                    inp.value = opt;
+                    inp.id = 'quiz-opt-' + i + '-' + optIndex;
+                    inp.style.marginTop = '2px';
+                    
+                    var optionText = document.createElement('div');
+                    optionText.style.flex = '1';
+                    optionText.innerHTML = opt;
+                    
+                    optionCard.appendChild(inp);
+                    optionCard.appendChild(optionText);
+                    lab.appendChild(optionCard);
+                    wrap.appendChild(lab);
+                });
+            } else if (item.type === 'multi' && item.options) {
+                var hint = document.createElement('div');
+                hint.style.cssText = 'font-size:13px;color:var(--color-gray-600);margin-bottom:8px;';
+                hint.textContent = 'Select all that apply (choose every correct option).';
+                wrap.appendChild(hint);
+                item.options.forEach(function (opt, optIndex) {
+                    var lab = document.createElement('label');
+                    lab.className = 'quiz-option';
+                    var optionCard = document.createElement('div');
+                    optionCard.style.display = 'flex';
+                    optionCard.style.alignItems = 'flex-start';
+                    optionCard.style.gap = '8px';
+                    optionCard.style.width = '100%';
+                    var inp = document.createElement('input');
+                    inp.type = 'checkbox';
+                    inp.name = 'quiz-multi-' + i;
+                    inp.value = String(optIndex);
+                    inp.id = 'quiz-multi-' + i + '-' + optIndex;
+                    inp.style.marginTop = '2px';
+                    var optionText = document.createElement('div');
+                    optionText.style.flex = '1';
+                    optionText.innerHTML = opt;
+                    optionCard.appendChild(inp);
+                    optionCard.appendChild(optionText);
+                    lab.appendChild(optionCard);
+                    wrap.appendChild(lab);
+                });
+            } else {
+                var err = document.createElement('div');
+                err.style.color = 'crimson';
+                err.textContent = 'Unsupported question type: ' + (item.type || '');
+                wrap.appendChild(err);
+            }
+            
+            el.quizBody.appendChild(wrap);
+        });
+    }
+
+    function renderGrade(data) {
+        el.interactive.style.display = 'none';
+        el.gradeCard.style.display = 'block';
+        
+        // 计算总分和正确率
+        const totalScore = data.total_score || 0;
+        const maxTotal = data.max_total_score || 100;
+        const accuracy = maxTotal > 0 ? ((totalScore / maxTotal) * 100).toFixed(1) : 0;
+        
+        // 确定表现评价
+        let performance = '';
+        let performanceClass = '';
+        if (accuracy >= 90) {
+            performance = '🎉 优秀';
+            performanceClass = 'success';
+        } else if (accuracy >= 70) {
+            performance = '👍 良好';
+            performanceClass = 'info';
+        } else if (accuracy >= 60) {
+            performance = '🔰 及格';
+            performanceClass = 'warning';
+        } else {
+            performance = '⚠️ 需要努力';
+            performanceClass = 'error';
+        }
+
+        el.gradeSummary.innerHTML = `
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: var(--spacing-sm);">
+                <span>总分：${totalScore} / ${maxTotal} 分</span>
+                <span class="performance-badge ${performanceClass}" style="
+                    padding: 4px 12px;
+                    border-radius: 20px;
+                    font-size: 12px;
+                    font-weight: 500;
+                    background: ${performanceClass === 'success' ? '#d4edda' : 
+                               performanceClass === 'info' ? '#d1ecf1' : 
+                               performanceClass === 'warning' ? '#fff3cd' : '#f8d7da'};
+                    color: ${performanceClass === 'success' ? '#155724' : 
+                            performanceClass === 'info' ? '#0c5460' : 
+                            performanceClass === 'warning' ? '#856404' : '#721c24'};
+                ">${performance} (${accuracy}%)</span>
+            </div>
+            <div style="font-size: 13px; color: var(--color-gray-500);">
+                完成时间：${new Date().toLocaleString('zh-CN')}
+            </div>
+        `;
+
+        el.gradeItems.innerHTML = '';
+        (data.items || []).forEach(function (row, index) {
+            var div = document.createElement('div');
+            div.className = 'grade-item';
+            
+            // 题目状态
+            const isCorrect = row.score >= row.max_score * 0.8;
+            const statusEmoji = isCorrect ? '✅' : '❌';
+            const statusClass = isCorrect ? 'success' : 'error';
+            
+            div.innerHTML = `
+                <div class="grade-item-head">
+                    <span style="display: flex; align-items: center; gap: 8px;">
+                        ${statusEmoji}
+                        <span>第 ${index + 1} 题 [${row.question_type || ''}]</span>
+                    </span>
+                    <span style="font-weight: 600; color: ${isCorrect ? 'var(--success-color)' : 'var(--error-color)'}">
+                        ${row.score || 0} / ${row.max_score || 10} 分
+                    </span>
+                </div>
+                <div class="grade-item-detail">
+                    <div style="margin-bottom: 8px;">
+                        <strong style="color: var(--color-gray-700);">题目：</strong>
+                        <span style="color: var(--color-gray-700);">${row.question || ''}</span>
+                    </div>
+                    <div style="margin-bottom: 8px;">
+                        <strong style="color: var(--color-gray-600);">你的答案：</strong>
+                        <span style="color: var(--color-gray-700);">${row.user_answer || '（空）'}</span>
+                    </div>
+                    <div style="margin-bottom: 8px;">
+                        <strong style="color: ${isCorrect ? 'var(--success-color)' : 'var(--error-color)'}">标准${isCorrect ? '答案' : '参考答案'}：</strong>
+                        <span style="color: var(--color-gray-800); font-weight: 500;">${row.correct_answer || ''}</span>
+                    </div>
+                    ${row.comment ? `
+                        <div style="padding: 12px; background: var(--color-gray-50); border-radius: var(--radius-sm); margin-top: 8px;">
+                            <strong style="color: var(--color-gray-700);">老师点评：</strong>
+                            <span style="color: var(--color-gray-800);">${row.comment}</span>
+                        </div>
+                    ` : ''}
+                </div>
+            `;
+            el.gradeItems.appendChild(div);
+        });
+        
+        el.gradeAnalysis.innerHTML = data.analysis ? `
+            <div style="padding: var(--spacing-md); background: var(--primary-light); border-radius: var(--radius-md);">
+                <strong style="color: var(--primary-color); display: block; margin-bottom: 8px;">📊 综合分析：</strong>
+                <p style="color: var(--color-gray-800); margin: 0;">${data.analysis}</p>
+            </div>
+        ` : '';
+        
+        showToast('判分完成！', false, true);
+    }
+
+    async function submitGrade() {
+        if (!currentQuiz || !localStorage.getItem(SID_KEY)) {
+            showToast('没有可提交的测验', true);
+            return;
+        }
+        
+        var items = currentQuiz.items;
+        var answers = items.map(function (item, i) {
+            if (item.type === 'tf' || item.type === 'single') {
+                var sel = el.quizBody.querySelector('input[name="quiz-opt-' + i + '"]:checked');
+                return sel ? sel.value : '';
+            }
+            if (item.type === 'multi') {
+                var cbs = el.quizBody.querySelectorAll('input[name="quiz-multi-' + i + '"]:checked');
+                return Array.from(cbs).map(function (cb) { return cb.value; }).sort(function (a, b) {
+                    return Number(a) - Number(b);
+                }).join(',');
+            }
+            return '';
+        });
+        
+        var need = items.length;
+        if (answers.length !== need || answers.some(function (a) { return !String(a).trim(); })) {
+            showToast('请完成全部 ' + need + ' 道题后再提交', true);
+            return;
+        }
+        
+        el.submitBtn.disabled = true;
+        el.submitBtn.innerHTML = '<span class="btn-loading"><svg class="spinner" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" stroke="currentColor" stroke-width="2" fill="none" stroke-dasharray="60" stroke-linecap="round"/></svg></span>';
+        
+        try {
+            var res = await fetch(
+                API_BASE + '/api/v1/sessions/' + encodeURIComponent(localStorage.getItem(SID_KEY)) + '/quiz/' + encodeURIComponent(currentQuiz.quiz_id) + '/grade',
+                {
+                    method: 'POST',
+                    headers: Object.assign({ 'Content-Type': 'application/json' }, authHeaders()),
+                    body: JSON.stringify({ answers: answers })
+                }
+            );
+            
+            if (!res.ok) {
+                var t = await res.text();
+                throw new Error(t || '判分失败');
+            }
+            
+            var data = await res.json();
+            renderGrade(data);
+        } catch (e) {
+            showToast(e.message || '判分失败', true);
+        } finally {
+            el.submitBtn.disabled = false;
+            el.submitBtn.innerHTML = '✅ 提交判分';
+        }
+    }
+
+    function resetQuiz() {
+        if (!currentQuiz) return;
+        
+        if (window.confirm('确定要清除当前答案，重新答题吗？')) {
+            renderQuiz(currentQuiz);
+            showToast('已重置答题状态', false, true);
+        }
+    }
+
+    function restartQuiz() {
+        if (window.confirm('确定要重新开始测验吗？将返回对话页生成新的题目。')) {
+            sessionStorage.removeItem(LAST_QUIZ_KEY);
+            window.location.href = 'index.html';
+        }
+    }
+
+    el.submitBtn.addEventListener('click', submitGrade);
+    el.resetBtn.addEventListener('click', resetQuiz);
+    el.restartBtn.addEventListener('click', restartQuiz);
+
+    // 键盘快捷键
+    document.addEventListener('keydown', (e) => {
+        // Ctrl/Cmd + Enter 提交答案
+        if ((e.ctrlKey || e.metaKey) && e.key === 'Enter' && !el.submitBtn.disabled) {
+            e.preventDefault();
+            submitGrade();
+        }
+        // Ctrl/Cmd + R 重置答题
+        if ((e.ctrlKey || e.metaKey) && e.key === 'r' && e.shiftKey) {
+            e.preventDefault();
+            resetQuiz();
+        }
+    });
+
+    try {
+        var raw = sessionStorage.getItem(LAST_QUIZ_KEY);
+        if (raw) {
+            var quiz = JSON.parse(raw);
+            if (quiz && quiz.quiz_id && quiz.items && quiz.items.length > 0) {
+                renderQuiz(quiz);
+            }
+        }
+    } catch (e) {
+        console.error(e);
+        showToast('加载测验失败', true);
+    }
+})();
+    </script>
+</body>
+</html>

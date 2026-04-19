@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="智能文档问答系统 - 上传文档，获取精准答案">
+    <title>智能文档问答</title>
+    <link rel="stylesheet" href="styles.css">
+    <link rel="icon" type="image/x-icon" href="data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%2328a745'><path d='M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z'/></svg>">
+</head>
+<body class="app-shell">
+    <!-- 侧边栏 -->
+    <aside class="sidebar" aria-label="导览">
+        <div class="sidebar-brand">
+            <h1>📚 智能文档问答</h1>
+            <p class="subtitle">基于文档内容的精准AI问答</p>
+        </div>
+        
+        <nav class="sidebar-nav">
+            <a href="index.html" class="nav-link active">💬 对话问答</a>
+            <a href="quiz.html" class="nav-link">📝 巩固测验</a>
+        </nav>
+        
+        <div class="sidebar-upload">
+            <div class="upload-zone compact" id="uploadZone">
+                <div class="upload-content">
+                    <svg class="upload-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                        <polyline points="17 8 12 3 7 8"/>
+                        <line x1="12" y1="3" x2="12" y2="15"/>
+                    </svg>
+                    <p>拖拽或点击上传文档</p>
+                    <span class="hint">支持 PDF / DOCX / TXT / PPTX / 图片 等格式</span>
+                </div>
+                <input type="file" id="fileInput" multiple hidden accept=".pdf,.docx,.doc,.txt,.md,.html,.xlsx,.xls,.pptx,.ppt,.png,.jpg,.jpeg,.webp,.bmp,.gif,.tiff">
+            </div>
+            
+            <div class="file-list" id="fileList"></div>
+        </div>
+    </aside>
+
+    <!-- 主面板 -->
+    <main class="main-panel">
+        <section class="chat-section">
+            <div class="chat-toolbar">
+                <button type="button" id="clearChatBtn" class="chat-toolbar-btn" disabled>🗑️ 清空聊天记录</button>
+            </div>
+            
+            <div id="chatMessages" class="chat-messages" aria-live="polite"></div>
+            
+            <div class="chat-generate-bar" id="generateBar">
+                <div class="generate-hint">
+                    <p>勾选助手的回答消息（可多选），并为每段设置出题数量，点击「生成测验」后生成练习题。</p>
+                </div>
+                <button type="button" id="generateQuizBtn" class="submit-btn secondary-btn" disabled>🚀 生成测验</button>
+            </div>
+            
+            <div class="chat-composer">
+                <textarea id="questionInput" placeholder="请输入你的问题..." rows="3" aria-label="问题输入框"></textarea>
+                <div class="controls">
+                    <label class="inline-label">
+                        🔍 检索片段数量
+                        <select id="topKSelect" aria-label="检索片段数量">
+                            <option value="1">1 段</option>
+                            <option value="3" selected>3 段</option>
+                            <option value="5">5 段</option>
+                            <option value="10">10 段</option>
+                        </select>
+                    </label>
+                    <button id="submitBtn" class="submit-btn" disabled>
+                        <span class="btn-text">📤 发送</span>
+                        <span class="btn-loading">
+                            <svg class="spinner" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <circle cx="12" cy="12" r="10" stroke="currentColor" stroke-width="2" fill="none" stroke-dasharray="60" stroke-linecap="round"/>
+                            </svg>
+                        </span>
+                    </button>
+                </div>
+            </div>
+        </section>
+
+        <section class="result-section" id="resultSection">
+            <div class="sources-card" id="sourcesCard">
+                <div class="card-header" id="sourcesHeader">
+                    <h3>📚 相关文档片段 <span class="count" id="sourcesCount"></span></h3>
+                    <button type="button" class="toggle-btn" id="toggleSources" aria-expanded="true" title="切换展开/收起">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M6 9l6 6 6-6"/>
+                        </svg>
+                    </button>
+                </div>
+                <div class="card-body" id="sourcesBody">
+                    <div class="notice-banner" id="kbNotice" style="display:none"></div>
+                    <div class="sources-list" id="sourcesList"></div>
+                </div>
+            </div>
+        </section>
+    </main>
+
+    <!-- 提示消息 -->
+    <div class="toast" id="toast">
+        <span class="toast-message"></span>
+    </div>
+
+    <script src="app.js"></script>
+</body>
+</html>

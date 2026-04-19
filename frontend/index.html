@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>文档问答 · 对话</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body class="app-shell">
+    <aside class="sidebar" aria-label="导览">
+        <div class="sidebar-brand">
+            <h1>文档问答</h1>
+            <p class="subtitle">RAG 智能问答</p>
+        </div>
+        <nav class="sidebar-nav">
+            <a href="index.html" class="nav-link active">对话</a>
+            <a href="quiz.html" class="nav-link">巩固测验</a>
+        </nav>
+        <div class="sidebar-upload">
+            <div class="upload-zone compact" id="uploadZone">
+                <div class="upload-content">
+                    <p>拖拽或点击上传文档</p>
+                    <span class="hint">PDF / DOCX / TXT / PPTX / 图片 等</span>
+                </div>
+                <input type="file" id="fileInput" multiple hidden>
+            </div>
+            <div class="file-list" id="fileList"></div>
+        </div>
+    </aside>
+
+    <main class="main-panel">
+        <section class="chat-section">
+            <div class="chat-toolbar">
+                <button type="button" id="clearChatBtn" class="chat-toolbar-btn" disabled>清空聊天记录</button>
+            </div>
+            <div id="chatMessages" class="chat-messages" aria-live="polite"></div>
+            <div class="chat-generate-bar" id="generateBar">
+                <p class="generate-hint">是否根据对话生成练习题？勾选助手消息（可多选），并为每段设置「出题数」，点击下方「生成」后在测验页展示相应数量的题目（选择题为主，与历史题目不重复）。</p>
+                <button type="button" id="generateQuizBtn" class="submit-btn secondary-btn" disabled>生成测验</button>
+            </div>
+            <div class="chat-composer">
+                <textarea id="questionInput" placeholder="输入你的问题…" rows="3"></textarea>
+                <div class="controls">
+                    <label class="inline-label">
+                        检索片段
+                        <select id="topKSelect">
+                            <option value="1">1</option>
+                            <option value="3" selected>3</option>
+                            <option value="5">5</option>
+                            <option value="10">10</option>
+                        </select>
+                    </label>
+                    <button id="submitBtn" class="submit-btn" disabled>
+                        <span class="btn-text">发送</span>
+                        <span class="btn-loading">
+                            <svg class="spinner" viewBox="0 0 24 24">
+                                <circle cx="12" cy="12" r="10" stroke="currentColor" stroke-width="2" fill="none" stroke-dasharray="60" stroke-linecap="round"/>
+                            </svg>
+                        </span>
+                    </button>
+                </div>
+            </div>
+        </section>
+
+        <section class="result-section" id="resultSection">
+            <div class="sources-card" id="sourcesCard">
+                <div class="card-header" id="sourcesHeader">
+                    <h3>相关文档片段 <span class="count" id="sourcesCount"></span></h3>
+                    <button type="button" class="toggle-btn" id="toggleSources" aria-expanded="true">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M6 9l6 6 6-6"/>
+                        </svg>
+                    </button>
+                </div>
+                <div class="card-body" id="sourcesBody">
+                    <div class="notice-banner" id="kbNotice" style="display:none"></div>
+                    <div class="sources-list" id="sourcesList"></div>
+                </div>
+            </div>
+        </section>
+    </main>
+
+    <div class="toast" id="toast">
+        <span class="toast-message"></span>
+    </div>
+
+    <script src="app.js"></script>
+</body>
+</html>
